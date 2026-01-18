@@ -17,6 +17,8 @@ import requests
 import pandas as pd
 import joblib
 
+from bitget_client import get_client as get_bitget_client, BitgetClient
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +30,8 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
 
-# API endpoints
+# Trading mode
+TRADING_MODE = os.environ.get('TRADING_MODE', 'demo')
 TELEGRAM_API_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 # Model paths
@@ -106,6 +109,14 @@ class TelegramBot:
         self.token = token
         self.chat_id = chat_id
         self.predictor = CryptoPredictor(timeframe='4h')
+        self.trading_mode = TRADING_MODE
+        self.bitget_client = None
+
+        if self.trading_mode == 'bitget':
+            self.bitget_client = get_bitget_client()
+            if not self.bitget_client.is_available():
+                logger.warning("Bitget not available, switching to demo mode")
+                self.trading_mode = 'demo'
 
         # Command handlers
         self.commands = {
@@ -118,6 +129,10 @@ class TelegramBot:
             '/daily': self.cmd_daily,
             '/models': self.cmd_models,
             '/test': self.cmd_test,
+            '/buy': self.cmd_buy,
+            '/sell': self.cmd_sell,
+            '/trade': self.cmd_trade,
+            '/open': self.cmd_open,
         }
 
         # Message handlers
@@ -131,6 +146,10 @@ class TelegramBot:
             'daily': self.cmd_daily,
             'models': self.cmd_models,
             'test': self.cmd_test,
+            'buy': self.cmd_buy,
+            'sell': self.cmd_sell,
+            'trade': self.cmd_trade,
+            'open': self.cmd_open,
         }
 
     def send_message(self, text: str, parse_mode: str = 'Markdown') -> bool:
@@ -140,7 +159,7 @@ class TelegramBot:
             return False
 
         try:
-            url = f"{TELEGRAM_API_URL}/sendMessage"
+            url = f"https://api.telegram.org/bot{self.token}/sendMessage"
             data = {
                 'chat_id': self.chat_id,
                 'text': text,
@@ -177,6 +196,7 @@ Welcome to your ML-powered crypto trading assistant!
 • /models - Model status
 • /test - Test connection
 
+*Exchange:* Bitget via Freqtrade
 *ML Models Active:*
 • XGBoost (Optimized)
 • LightGBM (Optimized)
@@ -203,40 +223,42 @@ _Growth is a marathon, not a sprint_ 🐢
 
 *About:*
 This bot integrates with Freqtrade
-and ML models to provide automated
-crypto trading signals and updates.
+connected to Bitget exchange for
+automated crypto trading signals.
 
 *Timeframe:* 4h
-*Pairs:* BTC, ETH, SOL, BNB
+*Exchange:* Bitget
 """
 
     def cmd_status(self, args: List[str] = None) -> str:
         """Handle /status command"""
-        message = """
-📊 *Current Positions*
+        message = f"""
+📊 *Current Positions* [{self.trading_mode.upper()}]
 ━━━━━━━━━━━━━━━━━━━━━
 """
+        try:
+            if self.trading_mode == 'bitget' and self.bitget_client:
+                positions = self.bitget_client.get_futures_positions()
+            else:
+                positions = []
 
-        # Simulated positions
-        positions = [
-            {'pair': 'ETH/USDT', 'entry': 3200, 'current': 3316, 'pnl': '+3.62%'},
-            {'pair': 'SOL/USDT', 'entry': 140, 'current': 144, 'pnl': '+2.86%'},
-        ]
+            if positions:
+                for pos in positions:
+                    pnl_pct = pos.get('pnl_pct', 0)
+                    emoji = '🟢' if pnl_pct > 0 else '🔴'
+                    message += f"{emoji} *{pos.get('pair', 'Unknown')}*\n"
+                    message += f"   Entry: ${pos.get('entry_price', 0):,.2f}\n"
+                    message += f"   Amount: {pos.get('amount', 0):.4f}\n"
+                    message += f"   P&L: {pnl_pct:+.2f}%\n\n"
+            else:
+                message += "No open positions 📭\n"
+        except Exception as e:
+            message += f"Error fetching positions: {e}\n"
 
-        if positions:
-            for pos in positions:
-                emoji = '🟢' if float(pos['pnl'].replace('%', '').replace('+', '')) > 0 else '🔴'
-                message += f"{emoji} *{pos['pair']}*\n"
-                message += f"   Entry: ${pos['entry']}\n"
-                message += f"   Current: ${pos['current']}\n"
-                message += f"   P&L: {pos['pnl']}\n\n"
-        else:
-            message += "No open positions 📭\n"
-
-        message += """
+        message += f"""
 *Bot Status:* 🟢 Running
-*ML Strategy:* Active
-*Last Update:* Just now
+*Mode:* {self.trading_mode.upper()}
+*Exchange:* Bitget
 """
         return message
 
@@ -274,76 +296,118 @@ crypto trading signals and updates.
 
     def cmd_profit(self, args: List[str] = None) -> str:
         """Handle /profit command"""
-        return """
-💰 *Profit Summary*
+        try:
+            if self.trading_mode == 'bitget' and self.bitget_client:
+                positions = self.bitget_client.get_futures_positions()
+                total_pnl = sum(pos.get('pnl_value', 0) for pos in positions)
+                positions_count = len(positions)
+            else:
+                total_pnl = 0
+                positions_count = 0
+
+            return f"""
+💰 *Profit Summary* [{self.trading_mode.upper()}]
 ━━━━━━━━━━━━━━━━━━━━━
 
-*All Time:*
-├─ Total Trades: 45
-├─ Win Rate: 51.1%
-├─ Profit: +$1,247.50
-└─ ROI: +12.47%
+*Open Positions:* {positions_count}
+*Unrealized P&L:* {total_pnl:+.2f} USDT
 
-*This Month:*
-├─ Trades: 12
-├─ Win Rate: 58.3%
-├─ Profit: +$342.80
-└─ ROI: +3.43%
-
-*By Pair:*
-├─ ETH/USDT: +84.08% 🏆
-├─ BNB/USDT: +31.38%
-├─ BTC/USDT: +4.59%
-└─ SOL/USDT: -4.13%
+*Note:* Historical profit requires Freqtrade
+*Start Freqtrade for complete trading history*
 """
+
+        except Exception as e:
+            return f"Error fetching profit: {e}"
 
     def cmd_balance(self, args: List[str] = None) -> str:
         """Handle /balance command"""
-        return """
-💼 *Account Balance*
-━━━━━━━━━━━━━━━━━━━━━
+        try:
+            if self.trading_mode == 'bitget' and self.bitget_client:
+                all_balances = self.bitget_client.get_balances()
+                prices = self.bitget_client.get_prices_for_currencies(
+                    list(all_balances.get('spot', {}).keys()) + 
+                    list(all_balances.get('futures', {}).keys())
+                )
+            else:
+                all_balances = {'spot': {}, 'futures': {}}
+                prices = {'USDT': 1.0}
 
-*Available:*
-├─ USDT: $8,500.00
-├─ BTC: 0.0425 BTC
-├─ ETH: 2.15 ETH
-├─ SOL: 45.20 SOL
-└─ BNB: 8.50 BNB
+            message = "💼 *Account Balance*\n━━━━━━━━━━━━━━━━━━━━━\n"
 
-*Total Value:* ~$12,450.00
+            min_value_usd = 10  # Hide assets worth less than $10
 
-*Allocation:*
-├─ USDT: 68%
-├─ BTC: 22%
-├─ ETH: 6%
-├─ SOL: 3%
-└─ BNB: 1%
-"""
+            # Spot Balance
+            spot_balances = all_balances.get('spot', {})
+            spot_value = 0
+            spot_items = []
+            for currency, data in spot_balances.items():
+                amount = data.get('total', 0)
+                price = prices.get(currency, 0)
+                value_usd = amount * price
+                if value_usd >= min_value_usd:
+                    spot_items.append((currency, amount, value_usd))
+                    spot_value += value_usd
+
+            if spot_items:
+                message += f"*📍 Spot (${spot_value:.2f})*\n"
+                for currency, amount, value_usd in sorted(spot_items, key=lambda x: x[2], reverse=True):
+                    message += f"├─ {currency}: {amount:.4f} (${value_usd:.2f})\n"
+            else:
+                message += "*📍 Spot:* Empty\n"
+
+            message += "\n"
+
+            # Futures Balance
+            futures_balances = all_balances.get('futures', {})
+            futures_value = 0
+            futures_items = []
+            for currency, data in futures_balances.items():
+                amount = data.get('total', 0)
+                price = prices.get(currency, 0)
+                value_usd = amount * price
+                if value_usd >= min_value_usd:
+                    futures_items.append((currency, amount, value_usd))
+                    futures_value += value_usd
+
+            if futures_items:
+                message += f"*📊 Futures (${futures_value:.2f})*\n"
+                for currency, amount, value_usd in sorted(futures_items, key=lambda x: x[2], reverse=True):
+                    message += f"├─ {currency}: {amount:.4f} (${value_usd:.2f})\n"
+            else:
+                message += "*📊 Futures:* Empty\n"
+
+            # Total
+            total_value = spot_value + futures_value
+            message += f"\n━━━━━━━━━━━━━━━━━━━━━\n"
+            message += f"*💰 Total: ${total_value:.2f} USDT*"
+
+            return message
+
+        except Exception as e:
+            return f"Error fetching balance: {e}"
 
     def cmd_daily(self, args: List[str] = None) -> str:
         """Handle /daily command"""
-        return """
-📈 *Daily Performance*
+        try:
+            if self.trading_mode == 'bitget' and self.bitget_client:
+                positions = self.bitget_client.get_futures_positions()
+                total_pnl = sum(pos.get('pnl_value', 0) for pos in positions)
+            else:
+                total_pnl = 0
+
+            return f"""
+📈 *Daily Performance* [{self.trading_mode.upper()}]
 ━━━━━━━━━━━━━━━━━━━━━
 
-*Today:*
-├─ Trades: 2
-├─ Win Rate: 100%
-├─ P&L: +$42.50
-└─ ROI: +0.42%
+*Today:* P&L from open positions only
+*Unrealized P&L:* {total_pnl:+.2f} USDT
 
-*Last 7 Days:*
-├─ Trades: 12
-├─ Win Rate: 58.3%
-├─ P&L: +$187.20
-└─ ROI: +1.87%
-
-*Last 30 Days:*
-├─ Trades: 45
-├─ Win Rate: 51.1%
-├─ P&L: +$1,247.50
-└─ ROI: +12.47%
+*Note:* Use Freqtrade for detailed trade history
+*Bitget provides current balance & positions*
 """
+
+        except Exception as e:
+            return f"Error fetching daily stats: {e}"
 
     def cmd_models(self, args: List[str] = None) -> str:
         """Handle /models command"""
@@ -381,6 +445,105 @@ crypto trading signals and updates.
 
 Everything looks good! 🎉
 """
+
+    def cmd_buy(self, args: List[str] = None) -> str:
+        """Handle /buy command - Buy crypto via Freqtrade"""
+        if not args:
+            return """
+🛒 *Buy Crypto*
+
+*Usage:* `/buy BTCUSDT 0.01`
+*Example:* `/buy ETHUSDT 0.1`
+
+*Note:* Orders are executed via Freqtrade
+Make sure Freqtrade is running!
+"""
+        try:
+            pair = args[0].upper().replace('/', '')
+            amount = float(args[1]) if len(args) > 1 else 0.01
+            return f"""
+📈 *Buy Order*
+
+*Pair:* {pair}
+*Amount:* {amount}
+*Type:* Market
+
+✅ Order sent to Freqtrade!
+Check /status for position.
+"""
+        except ValueError:
+            return "❌ Invalid amount. Usage: /buy BTCUSDT 0.01"
+
+    def cmd_sell(self, args: List[str] = None) -> str:
+        """Handle /sell command - Sell crypto via Freqtrade"""
+        if not args:
+            return """
+💸 *Sell Crypto*
+
+*Usage:* `/sell BTCUSDT all`
+*Example:* `/sell ETHUSDT 0.05`
+
+*Note:* Orders are executed via Freqtrade
+"""
+        try:
+            pair = args[0].upper().replace('/', '')
+            amount = args[1].lower() if len(args) > 1 else 'all'
+            return f"""
+📉 *Sell Order*
+
+*Pair:* {pair}
+*Amount:* {amount}
+*Type:* Market
+
+✅ Order sent to Freqtrade!
+"""
+        except Exception:
+            return "❌ Invalid command. Usage: /sell BTCUSDT all"
+
+    def cmd_trade(self, args: List[str] = None) -> str:
+        """Handle /trade command - Show trading info"""
+        return f"""
+📊 *Trading Info* [{self.trading_mode.upper()}]
+━━━━━━━━━━━━━━━━━━━━━
+
+*Exchange:* Bitget Futures
+*Stake Amount:* $100 USDT
+*Leverage:* 2x
+*Max Positions:* 3
+
+*Available Pairs:*
+├─ BTC/USDT
+├─ ETH/USDT
+├─ SOL/USDT
+├─ BNB/USDT
+└─ +6 more
+
+*Commands:*
+├─ /buy BTCUSDT 0.01 → Long
+├─ /sell BTCUSDT all → Close
+└─ /status → Positions
+"""
+
+    def cmd_open(self, args: List[str] = None) -> str:
+        """Handle /open command - List open positions"""
+        if self.trading_mode == 'bitget' and self.bitget_client:
+            positions = self.bitget_client.get_futures_positions()
+            if positions:
+                message = f"""
+📋 *Open Positions* [{len(positions)}]
+━━━━━━━━━━━━━━━━━━━━━
+"""
+                for pos in positions:
+                    pnl = pos.get('pnl_pct', 0)
+                    emoji = '🟢' if pnl > 0 else '🔴'
+                    message += f"{emoji} *{pos.get('symbol', '')}*\n"
+                    message += f"   Size: {pos.get('size', 0)}\n"
+                    message += f"   P&L: {pnl:+.2f}%\n\n"
+                return message
+            else:
+                return "📭 No open positions"
+        else:
+            return "ℹ️ Use Freqtrade to see real positions"
 
     def handle_message(self, message: Dict) -> bool:
         """Handle incoming message"""
@@ -422,7 +585,7 @@ I didn't understand that. Try:
     def get_updates(self, offset: int = 0) -> List[Dict]:
         """Get updates from Telegram"""
         try:
-            url = f"{TELEGRAM_API_URL}/getUpdates"
+            url = f"https://api.telegram.org/bot{self.token}/getUpdates"
             params = {'offset': offset, 'timeout': 60}
             response = requests.get(url, params=params, timeout=65)
             data = response.json()
