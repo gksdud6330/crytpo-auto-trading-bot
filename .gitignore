@@ -1,0 +1,57 @@
+# API Configuration (NEVER COMMIT!)
+config.json
+config.bitget.json
+*.json
+!config_examples/
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+tradesv3.dryrun.sqlite*
+freqtrade*.sqlite*
+
+# Logs
+logs/
+*.log
+backtest*.log
+
+# Backtest results
+user_data/backtest_results/
+backtest-results/
+ml_trading/reports/
+
+# ML Data and Models (large files, can be regenerated)
+ml_trading/data/
+ml_trading/models/
+*.joblib
+*.parquet
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebooks (output cleared)
+*.ipynb_checkpoints/
+notebooks/*.py
+notebooks/*.html

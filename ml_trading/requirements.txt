@@ -1,0 +1,41 @@
+# Core ML/AI
+tensorflow>=2.13.0
+torch>=2.0.0
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+lightgbm>=4.0.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+pyarrow>=12.0.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Exchange Data
+ccxt>=4.0.0
+
+# Technical Analysis
+ta>=0.11.0
+# pandas-ta>=0.3.0  # Removed - conflicts with ta library
+
+# On-chain Data (free)
+pandas-datareader>=0.10.0
+
+# Sentiment Analysis
+vaderSentiment>=3.3.2
+textblob>=0.17.1
+transformers>=4.30.0
+torch>=2.0.0
+
+# Notebooks
+jupyterlab>=4.0.0
+nbformat>=5.9.0
+
+# Utilities
+python-dateutil>=2.8.0
+requests>=2.31.0
+joblib>=1.3.0
+tqdm>=4.65.0
